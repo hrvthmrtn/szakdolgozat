@@ -54,7 +54,7 @@
 	    <!-- Statistics és Data linkek csak bejelentkezett felhasználóknak -->
 	    {#if isLoggedIn}
 		<li><a href="/statistics" class="font-semibold text-gray-700 hover:text-primary">Statisztika</a></li>
-		<li><a href="/data" class="font-semibold text-gray-700 hover:text-primary">Adatok</a></li>
+		<li><a href="/data" class="font-semibold text-gray-700 hover:text-primary">Továbbtanulási űrlap</a></li>
 		<li><button on:click={handleLogout} class="font-semibold text-gray-700 hover:text-primary">Kijelentkezés</button></li>
 	    {:else}
 		<li><a href="/login" class="font-semibold text-gray-700 hover:text-primary">Belépés</a></li>
@@ -88,7 +88,7 @@
 	    <!-- Statistics és Data linkek csak bejelentkezett felhasználóknak mobil menüben -->
 	    {#if isLoggedIn}
 		<li><a href="/statistics" class="block px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200" on:click={() => (isMenuOpen = false)}>Statisztika</a></li>
-		<li><a href="/data" class="block px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200" on:click={() => (isMenuOpen = false)}>Adatok</a></li>
+		<li><a href="/data" class="block px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200" on:click={() => (isMenuOpen = false)}>Továbbtanulási űrlap</a></li>
 		<li><button on:click={handleLogout} class="block px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200">Kijelentkezés</button></li>
 	    {:else}
 		<li><a href="/login" class="block px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200">Belépés</a></li>
