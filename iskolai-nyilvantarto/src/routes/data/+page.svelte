@@ -2,7 +2,7 @@
       import { supabase } from '../../supabaseClient.js';
       import { onMount } from 'svelte';
       import { goto } from '$app/navigation';
-      
+    
       let option = '';
       let university = '';
       let faculty = '';
@@ -12,7 +12,7 @@
       let workplaceName = '';
       let income = '';
       let workSince = '';
-      
+    
       // Ellenőrizzük a bejelentkezést
       onMount(async () => {
         const { data, error } = await supabase.auth.getUser();
@@ -20,7 +20,7 @@
           goto('/login');
         }
       });
-      
+    
       // Form kezelés
       async function handleSubmit() {
         const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -29,45 +29,34 @@
           return;
         }
     
-        // Először megnézi, hogy a user_id szerepel-e a profiles táblában
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
+        // Ellenőrizzük, hogy a felhasználó létezik-e a users táblában
+        const { data: userTableData, error: userTableError } = await supabase
+          .from('users')
           .select('id')
-          .eq('user_id', userData.user.id)
+          .eq('id', userData.user.id)
           .single();
     
-        if (profileError) {
-          // Ha nincs profil a táblában, először beszúrja
-          const { data: insertData, error: insertError } = await supabase
-            .from('profiles')
-            .insert([
-              { user_id: userData.user.id} 
-            ]);
-          
-          if (insertError) {
-            console.error('Hiba történt a profil létrehozásakor:', insertError);
-            alert('Hiba történt a profil létrehozásakor!');
-            return;
-          }
+        if (userTableError) {
+          console.error('A felhasználó nem található a users táblában:', userTableError);
+          alert('A felhasználó nem található a users táblában!');
+          return;
         }
     
-        // Jövedelem mező ha üres, akkor null
+        // Jövedelem és munka kezdete értékek feldolgozása
         const parsedIncome = income ? parseFloat(income) : null;
-    
-        // Ha a workSince üres, akkor null érték
-        const parsedWorkSince = workSince ? workSince : null;
+        const parsedWorkSince = workSince || null;
     
         const formData = {
           user_id: userData.user.id,  // Bejelentkezett felhasználó ID-ja
-          option,
-          university,
-          faculty,
-          major,
-          graduation_year: graduationYear,
-          work_area: workArea,
-          workplace_name: workplaceName,
-          income: parsedIncome, // Jövedelem
-          work_since: parsedWorkSince // Munka kezdete
+          option: option || null,
+          university: university || null,
+          faculty: faculty || null,
+          major: major || null,
+          graduation_year: graduationYear ? parseInt(graduationYear) : null,
+          work_area: workArea || null,
+          workplace_name: workplaceName || null,
+          income: parsedIncome,
+          work_since: parsedWorkSince
         };
     
         // Adatok mentése a Supabase adatbázisba
@@ -80,7 +69,7 @@
           alert('Hiba történt az adatok mentése közben!');
         } else {
           console.log('Sikeresen mentett adat:', data);
-          alert('Űrlap elküldve!');
+          alert('Űrlap sikeresen elküldve!');
         }
       }
     </script>
