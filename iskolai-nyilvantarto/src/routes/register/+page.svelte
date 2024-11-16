@@ -1,144 +1,198 @@
 <script lang="ts">
   import { supabase } from '../../supabaseClient.js';
-  import bcrypt from 'bcryptjs'; // Bcrypt könyvtár a jelszavak titkosításához
+  import { onMount } from 'svelte';
 
-  let email = '';
-  let username = '';
-  let password = '';
-  let confirmPassword = '';
+  let studyStats = []; // Továbbtanulók statisztikai adatai
+  let workStats = []; // Dolgozók statisztikai adatai
+  let incomeStats = null; // Jövedelem statisztikák
+  let hasProvidedIncome = false; // A felhasználó megadta-e a jövedelmét
+  let isLoading = true;
 
-  // A regisztrációs funkció
-  async function handleRegister(event: Event) {
-    event.preventDefault(); // Megakadályozza az oldal újratöltődését
+  // Jövedelem statisztikák kiszámítása
+  function calculateIncomeStats(data) {
+    const validIncomes = data
+      .map(item => item.income)
+      .filter(income => income !== null);
 
-    // Ellenőrizzük, hogy a két jelszó megegyezik-e
-    if (password !== confirmPassword) {
-      alert('A két jelszó nem egyezik!');
+    if (validIncomes.length === 0) return null;
+
+    const sum = validIncomes.reduce((a, b) => a + b, 0);
+    const avg = sum / validIncomes.length;
+    const sorted = validIncomes.sort((a, b) => a - b);
+    const median =
+      validIncomes.length % 2 === 0
+        ? (sorted[validIncomes.length / 2 - 1] + sorted[validIncomes.length / 2]) / 2
+        : sorted[Math.floor(validIncomes.length / 2)];
+    const min = Math.min(...validIncomes);
+    const max = Math.max(...validIncomes);
+
+    return { avg, median, min, max, count: validIncomes.length };
+  }
+
+  // Adatok betöltése
+  onMount(async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      console.error('Hozzáférés megtagadva. Jelentkezzen be.');
       return;
     }
 
-    try {
-      // A regisztrációs API hívása a Supabase-en
-      const { data, error } = await supabase.auth.signUp({
-        email: email,
-        password: password, // Jelszó hitelesítéshez
-      });
+    const userId = userData.user.id;
 
-      // Hibakezelés
-      if (error) {
-        alert(error.message);
-        return;
-      }
+    // Ellenőrizzük, hogy a felhasználó megadta-e a jövedelmét
+    const { data: userWorkData, error: userWorkError } = await supabase
+      .from('work')
+      .select('income')
+      .eq('user_id', userId)
+      .single();
 
-      // Ha sikeres a regisztráció
-      if (data?.user) {
-        const userId = data.user.id;
-
-        // Jelszó titkosítása
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Mentés a profiles táblába
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: userId, // Az auth.users táblából kapott UUID
-              email: email,
-              username: username,
-              password: hashedPassword, // Mentjük a titkosított jelszót
-            },
-          ]);
-
-        if (profileError) {
-          console.error('Hiba a profil mentésekor:', profileError);
-          alert('Hiba történt a profil mentése során!');
-        } else {
-          alert('Sikeres regisztráció és profil létrehozás!');
-        }
-      } else {
-        alert('Nem található felhasználó!');
-      }
-    } catch (error) {
-      console.error('Hiba a regisztráció során:', error);
-      alert('Hiba történt a regisztráció során!');
+    if (userWorkData?.income) {
+      hasProvidedIncome = true;
     }
-  }
+
+    // Továbbtanulók adatai
+    const { data: studyData, error: studyError } = await supabase
+      .from('study')
+      .select('university, faculty, major');
+
+    const { data: workData, error: workDataError } = await supabase
+      .from('work')
+      .select('work_area, workplace_name, income');
+
+    if (studyError || workDataError) {
+      console.error('Hiba történt az adatok betöltésekor:', studyError || workDataError);
+      return;
+    }
+
+    // Továbbtanulók statisztikák feldolgozása
+    studyStats = studyData.reduce((acc, curr) => {
+      const key = `${curr.university} | ${curr.faculty} | ${curr.major}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Dolgozók statisztikák feldolgozása
+    workStats = workData.reduce((acc, curr) => {
+      acc[curr.work_area] = (acc[curr.work_area] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Jövedelem statisztikák kiszámítása
+    incomeStats = calculateIncomeStats(workData);
+
+    isLoading = false;
+  });
 </script>
 
-<div class="flex items-center justify-center min-h-screen bg-gray-100">
-  <div class="w-full max-w-md bg-white shadow-md rounded-lg p-6 space-y-4">
-    <!-- Regisztrációs cím -->
-    <h2 class="text-2xl font-semibold text-center text-gray-700">Regisztráció</h2>
+<main class="container mx-auto p-6">
+  <h1 class="text-3xl font-bold text-center mb-6">Statisztikai Adatok</h1>
 
-    <!-- Regisztrációs űrlap -->
-    <form class="space-y-4" on:submit={handleRegister}>
-      <div>
-        <label for="email" class="block text-sm font-medium text-gray-600">E-mail</label>
-        <input
-          type="email"
-          id="email"
-          bind:value={email}
-          required
-          placeholder="Email"
-          class="w-full px-4 py-2 mt-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-        />
-      </div>
-      <div>
-        <label for="username" class="block text-sm font-medium text-gray-600">Felhasználónév</label>
-        <input
-          type="text"
-          id="username"
-          bind:value={username}
-          required
-          placeholder="Felhasználónév"
-          class="w-full px-4 py-2 mt-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-        />
-      </div>
-      <div>
-        <label for="password" class="block text-sm font-medium text-gray-600">Jelszó</label>
-        <input
-          type="password"
-          id="password"
-          bind:value={password}
-          required
-          placeholder="Jelszó"
-          class="w-full px-4 py-2 mt-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-        />
-      </div>
-      <div>
-        <label for="confirmPassword" class="block text-sm font-medium text-gray-600">Jelszó újra</label>
-        <input
-          type="password"
-          id="confirmPassword"
-          bind:value={confirmPassword}
-          required
-          placeholder="Jelszó újra"
-          class="w-full px-4 py-2 mt-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-        />
-      </div>
-      <button type="submit" class="w-full px-4 py-2 text-white bg-primary hover:bg-primary-focus rounded-md">
-        Regisztrálok
-      </button>
-    </form>
+  {#if isLoading}
+    <p class="text-center text-lg">Adatok betöltése...</p>
+  {:else}
+    <!-- Továbbtanulók -->
+    <section class="mb-12">
+      <h2 class="text-2xl font-semibold mb-4">Továbbtanulók</h2>
+      <table class="table-auto w-full border-collapse border border-gray-200">
+        <thead>
+          <tr>
+            <th class="border border-gray-300 px-4 py-2 text-left">Egyetem | Kar | Szak</th>
+            <th class="border border-gray-300 px-4 py-2 text-right">Létszám</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each Object.entries(studyStats) as [key, count]}
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">{key}</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{count}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
 
-    <!-- Bejelentkezési link -->
-    <p class="text-sm text-center text-gray-600 mt-4">
-      Már van fiókod?
-      <a href="/login" class="text-primary hover:underline font-medium">Jelentkezz be itt</a>
-    </p>
-  </div>
-</div>
+    <!-- Dolgozók -->
+    <section class="mb-12">
+      <h2 class="text-2xl font-semibold mb-4">Dolgozók</h2>
+      <table class="table-auto w-full border-collapse border border-gray-200">
+        <thead>
+          <tr>
+            <th class="border border-gray-300 px-4 py-2 text-left">Munkaterület</th>
+            <th class="border border-gray-300 px-4 py-2 text-right">Létszám</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each Object.entries(workStats) as [area, count]}
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">{area}</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{count}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Jövedelem Statisztikák -->
+    <section class="mb-12">
+      <h2 class="text-2xl font-semibold mb-4">Jövedelem Statisztikák</h2>
+      {#if hasProvidedIncome}
+        <table class="table-auto w-full border-collapse border border-gray-200">
+          <thead>
+            <tr>
+              <th class="border border-gray-300 px-4 py-2 text-left">Statisztika</th>
+              <th class="border border-gray-300 px-4 py-2 text-right">Érték</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">Átlag</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{incomeStats.avg.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">Medián</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{incomeStats.median.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">Legalacsonyabb</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{incomeStats.min.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">Legmagasabb</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{incomeStats.max.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td class="border border-gray-300 px-4 py-2">Adatszám</td>
+              <td class="border border-gray-300 px-4 py-2 text-right">{incomeStats.count}</td>
+            </tr>
+          </tbody>
+        </table>
+      {:else}
+        <div class="blur relative">
+          <p class="absolute top-2 left-2 text-gray-500">Jövedelem megadása szükséges a statisztikák megtekintéséhez</p>
+          <div class="blurred-content bg-gray-100 p-6 rounded-lg">
+            <table class="table-auto w-full border-collapse border border-gray-200">
+              <thead>
+                <tr>
+                  <th class="border border-gray-300 px-4 py-2 text-left">Statisztika</th>
+                  <th class="border border-gray-300 px-4 py-2 text-right">Érték</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+      {/if}
+    </section>
+  {/if}
+</main>
 
 <style>
-  .bg-primary {
-    background-color: #4CAF50;
+  .blur {
+    position: relative;
+    filter: blur(5px);
+    pointer-events: none;
   }
-
-  .bg-primary-focus {
-    background-color: #45a049;
-  }
-
-  .focus\:ring-primary {
-    --tw-ring-color: #4CAF50;
+  .absolute {
+    position: absolute;
+    z-index: 10;
   }
 </style>
