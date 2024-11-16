@@ -1,17 +1,17 @@
 <script lang="ts">
   import { supabase } from '../../supabaseClient.js';
   import { onMount } from 'svelte';
-  import type { Event } from '../../events.d.ts';
 
-  let events: Event[] = [];
+  let events = [];
   let isUserLoggedIn = false;
+  let isAdmin = false; // Admin jogosultság ellenőrzéséhez
   let newEvent = { title: '', description: '', location: '', start_time: '', end_time: '' };
-  let editingEvent: Event | null = null;
-  let isDeleteConfirming = false;
-  let eventToDelete: Event | null = null;
+  let editingEvent = null; // Esemény szerkesztéséhez
+  let isDeleteConfirming = false; // Törlés megerősítéséhez
+  let eventToDelete = null; // Törlendő esemény
   let successMessage: string | null = null;
 
-  // Felhasználó ellenőrzése
+  // Felhasználó bejelentkezésének és admin jogosultságának ellenőrzése
   async function checkUser() {
     const { data, error } = await supabase.auth.getUser();
     if (error) {
@@ -21,16 +21,29 @@
 
     if (data?.user) {
       isUserLoggedIn = true;
+
+      // Ellenőrizzük, hogy admin-e
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Hiba történt az admin jogosultság ellenőrzésekor:', profileError);
+      } else {
+        isAdmin = profile?.is_admin || false;
+      }
     }
   }
 
-  // Események betöltése és létrehozók neveinek lekérdezése
+  // Események betöltése a létrehozók nevével
   async function loadEvents() {
     const { data, error } = await supabase
       .from('events')
       .select(`
         *,
-        users (username)  
+        profiles (username)
       `)
       .order('start_time', { ascending: true });
 
@@ -45,6 +58,7 @@
   async function createEvent() {
     if (!newEvent.title || !newEvent.start_time || !newEvent.end_time) {
       console.error('Minden mezőt ki kell tölteni!');
+      alert('Kérlek, töltsd ki a cím, kezdési és befejezési idő mezőket!');
       return;
     }
 
@@ -60,8 +74,8 @@
       .from('events')
       .insert([{
         title: newEvent.title,
-        description: newEvent.description,
-        location: newEvent.location,
+        description: newEvent.description || null,
+        location: newEvent.location || null,
         start_time: newEvent.start_time,
         end_time: newEvent.end_time,
         created_by: created_by, // Felhasználó ID-je
@@ -69,40 +83,16 @@
 
     if (error) {
       console.error('Hiba történt az esemény létrehozásakor:', error);
+      alert('Hiba történt az esemény mentése során.');
     } else {
       successMessage = 'Esemény sikeresen létrehozva!';
-      loadEvents();  // Frissítjük az események listáját
+      loadEvents(); // Események újratöltése
       newEvent = { title: '', description: '', location: '', start_time: '', end_time: '' }; // Reseteljük az űrlapot
-      setTimeout(() => successMessage = null, 3000); // Üzenet eltüntetése 3 másodperc után
+      setTimeout(() => successMessage = null, 3000); // Sikerüzenet eltüntetése 3 másodperc után
     }
   }
 
-  // Esemény törlésének megerősítése
-  function confirmDelete(event: Event) {
-    isDeleteConfirming = true;
-    eventToDelete = event;
-  }
-
-  // Esemény törlése
-  async function deleteEvent() {
-    if (eventToDelete) {
-      const { error } = await supabase
-        .from('events')
-        .delete()
-        .eq('id', eventToDelete.id);
-
-      if (error) {
-        console.error('Hiba történt az esemény törlésénél:', error);
-      } else {
-        loadEvents();
-      }
-
-      isDeleteConfirming = false;
-      eventToDelete = null;
-    }
-  }
-
-  // Módosítások kezelése
+  // Esemény módosítása
   async function updateEvent() {
     if (editingEvent) {
       const { error } = await supabase
@@ -118,9 +108,39 @@
 
       if (error) {
         console.error('Hiba történt az esemény módosítása során:', error);
+        alert('Hiba történt az esemény módosítása során.');
       } else {
-        loadEvents();
-        editingEvent = null; // A módosított esemény törlése
+        successMessage = 'Esemény sikeresen módosítva!';
+        loadEvents(); // Események újratöltése
+        editingEvent = null; // Szerkesztés befejezése
+        setTimeout(() => successMessage = null, 3000);
+      }
+    }
+  }
+
+  // Esemény törlésének megerősítése
+  function confirmDelete(event) {
+    isDeleteConfirming = true;
+    eventToDelete = event;
+  }
+
+  // Esemény törlése
+  async function deleteEvent() {
+    if (eventToDelete) {
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', eventToDelete.id);
+
+      if (error) {
+        console.error('Hiba történt az esemény törlésénél:', error);
+        alert('Hiba történt az esemény törlése során.');
+      } else {
+        successMessage = 'Esemény sikeresen törölve!';
+        loadEvents(); // Események újratöltése
+        isDeleteConfirming = false; // Törlés megerősítésének lezárása
+        eventToDelete = null;
+        setTimeout(() => successMessage = null, 3000);
       }
     }
   }
@@ -156,9 +176,9 @@
         <p class="text-gray-600">{event.location}</p>
         <p class="text-gray-500 mt-1">{new Date(event.start_time ?? '').toLocaleString()}</p>
         <p class="text-gray-500">{new Date(event.end_time ?? '').toLocaleString()}</p>
-        <p class="text-gray-400 text-sm mt-1">Létrehozta: {event.users?.username}</p>
+        <p class="text-gray-400 text-sm mt-1">Létrehozta: {event.profiles?.username}</p>
 
-        {#if isUserLoggedIn}
+        {#if isAdmin}
           <div class="button-group mt-4 flex space-x-4">
             <button on:click={() => editingEvent = { ...event }} class="btn btn-warning">Módosítás</button>
             <button on:click={() => confirmDelete(event)} class="btn btn-danger">Törlés</button>
@@ -168,7 +188,7 @@
     {/each}
   </div>
 
-  {#if isUserLoggedIn}
+  {#if isAdmin}
     {#if editingEvent}
       <div class="create-event-form mt-8 p-6 bg-white shadow-lg rounded-lg">
         <h2 class="text-2xl font-semibold text-gray-700 mb-4">Esemény Módosítása</h2>
